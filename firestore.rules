@@ -1,0 +1,74 @@
+rules_version = '2';
+
+// UnduhKu | by Saiful Arif
+// Pengunjung (tanpa login): hanya boleh membaca pengaturan dan daftar platform,
+// menulis log unduhan baru, dan menghitung kuota hariannya sendiri.
+// Admin (Firebase Auth): boleh membaca dan menulis semuanya.
+//
+// GANTI 'GANTI_DENGAN_EMAIL_ADMIN' dengan email akun admin yang kamu daftarkan
+// di Firebase Authentication. Pencocokan email ini penting: tanpa itu, siapa pun
+// yang membuat akun lewat API Firebase bisa jadi admin.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'GANTI_DENGAN_EMAIL_ADMIN';
+    }
+
+    // Pengaturan engine dan pengumuman
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Daftar platform
+    match /platforms/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Log unduhan: pengunjung hanya boleh menambah, tidak boleh membaca
+    match /downloads/{docId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAdmin() || validLog();
+
+      function validLog() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['deviceId', 'url', 'platform', 'title', 'type', 'quality', 'format', 'sizeLabel', 'status', 'createdAt'])
+          && d.keys().hasAll(['deviceId', 'url', 'platform', 'title', 'type', 'format', 'status', 'createdAt'])
+          && d.deviceId is string && d.deviceId.size() <= 40
+          && d.url is string && d.url.size() <= 1000
+          && d.platform is string && d.platform.size() <= 20
+          && d.title is string && d.title.size() <= 300
+          && d.type in ['video', 'audio']
+          && d.format is string && d.format.size() <= 40
+          && d.status in ['done', 'error']
+          && d.createdAt == request.time;
+      }
+    }
+
+    // Kuota harian per perangkat. ID dokumen: {deviceId}_{YYYY-MM-DD}
+    match /usage/{docId} {
+      allow get: if true;
+      allow list, delete: if isAdmin();
+
+      allow create: if isAdmin() || (
+        request.resource.data.keys().hasOnly(['deviceId', 'day', 'count'])
+        && request.resource.data.count == 1
+        && request.resource.data.deviceId is string
+        && request.resource.data.day is string
+        && docId == request.resource.data.deviceId + '_' + request.resource.data.day
+      );
+
+      allow update: if isAdmin() || (
+        request.resource.data.keys().hasOnly(['deviceId', 'day', 'count'])
+        && request.resource.data.deviceId == resource.data.deviceId
+        && request.resource.data.day == resource.data.day
+        && request.resource.data.count == resource.data.count + 1
+        && request.resource.data.count <= 1000
+      );
+    }
+  }
+}

@@ -1,0 +1,63 @@
+name: Unduh Media
+# Nama run dipakai aplikasi untuk mencocokkan permintaan, jangan diubah.
+run-name: job-${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: ID pekerjaan dari aplikasi
+        required: true
+      url:
+        description: Link video atau audio
+        required: true
+      kind:
+        description: video atau audio
+        default: video
+      quality:
+        description: Tinggi video maksimal (144 sampai 2160)
+        default: "1080"
+      audio_format:
+        description: mp3, wav, atau best
+        default: mp3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unduh-${{ inputs.job_id }}
+
+jobs:
+  unduh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # YouTube butuh runtime JavaScript untuk memecahkan tantangan n-sig
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Pasang yt-dlp dan ffmpeg
+        run: |
+          python -m pip install -U "yt-dlp[default]"
+          command -v ffmpeg >/dev/null || (sudo apt-get update -y && sudo apt-get install -y ffmpeg)
+          yt-dlp --version
+          ffmpeg -version | head -n 1
+
+      - name: Unduh dan unggah ke release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_ID: ${{ inputs.job_id }}
+          MEDIA_URL: ${{ inputs.url }}
+          KIND: ${{ inputs.kind }}
+          QUALITY: ${{ inputs.quality }}
+          AUDIO_FORMAT: ${{ inputs.audio_format }}
+          COOKIES_TXT: ${{ secrets.COOKIES_TXT }}
+          RELEASE_TAG: dl
+        run: python scripts/download.py

@@ -1,0 +1,29 @@
+name: Bersihkan Berkas Lama
+
+on:
+  schedule:
+    - cron: "23 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bersih:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Hapus berkas hasil unduhan yang lebih tua dari 90 menit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: dl
+        run: |
+          cutoff=$(date -u -d '90 minutes ago' +%s)
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.assets[] | "\(.id) \(.created_at)"' 2>/dev/null | while read -r id created; do
+            ts=$(date -u -d "$created" +%s)
+            if [ "$ts" -lt "$cutoff" ]; then
+              echo "Menghapus aset $id ($created)"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id" || true
+            fi
+          done
+          echo "Selesai"
